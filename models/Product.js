@@ -1,11 +1,5 @@
 const mongoose = require('mongoose');
 
-const shadeSchema = new mongoose.Schema({
-  name: String,
-  code: String,
-  hexColor: String
-});
-
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -24,7 +18,6 @@ const productSchema = new mongoose.Schema({
   images: [{
     type: String
   }],
-  shades: [shadeSchema],
   category: {
     type: String,
     required: true
@@ -36,7 +29,11 @@ const productSchema = new mongoose.Schema({
   stockQuantity: {
     type: Number,
     default: 0
-  }
+  },
+  shades: [{
+    name: String,
+    hexCode: String
+  }]
 }, {
   timestamps: true
 });
