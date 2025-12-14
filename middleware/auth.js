@@ -20,7 +20,8 @@ const auth = async (req, res, next) => {
     // Add user to request
     req.user = decoded;
     
-    console.log('✅ Authentication successful for user:', decoded.id);
+    // FIXED: Changed from decoded.id to decoded.userId
+    console.log('✅ Authentication successful for user:', decoded.userId);
     
     // Continue to next middleware/route
     next();
