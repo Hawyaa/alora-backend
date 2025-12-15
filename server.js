@@ -16,16 +16,20 @@ app.use((req, res, next) => {
 });
 
 // Import routes
+const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
 const cartRoutes = require('./routes/cart');
 const productRoutes = require('./routes/products');
 const paymentRoutes = require('./routes/payment');
+const orderRoutes = require('./routes/order'); // Add this line
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/orders', orderRoutes); // Add this line
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -73,6 +77,8 @@ mongoose.connect(process.env.MONGODB_URI)
       console.log(`🛒 Cart: http://localhost:${PORT}/api/cart`);
       console.log(`🛍️  Products: http://localhost:${PORT}/api/products`);
       console.log(`💳 Payment: http://localhost:${PORT}/api/payment`);
+      console.log(`📦 Orders: http://localhost:${PORT}/api/orders`);
+      console.log(`👑 Admin: http://localhost:${PORT}/api/admin`);
       console.log('='.repeat(50));
     });
   })

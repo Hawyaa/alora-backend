@@ -1,8 +1,9 @@
+const auth = require('../middleware/auth');
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const User = require('../models/User-fixed'); // Use the fixed model
+const User = require('../models/User'); // Fixed: Import from the correct model file
 
 // Register new user
 router.post('/register', async (req, res) => {
@@ -151,19 +152,9 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/me', auth, async (req, res) => { // Added the 'auth' middleware
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: 'No token provided'
-      });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await User.findById(req.user.userId).select('-password');
 
     if (!user) {
       return res.status(404).json({
@@ -178,9 +169,31 @@ router.get('/me', async (req, res) => {
     });
   } catch (error) {
     console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching user data'
+    });
+  }
+});
+
+// Verify token endpoint
+router.get('/verify', auth, (req, res) => {
+  try {
+    res.json({
+      success: true,
+      message: 'Token is valid',
+      user: {
+        id: req.user.userId, // Use 'userId' from the token payload
+        email: req.user.email,
+        role: req.user.role,
+        name: req.user.name
+      }
+    });
+  } catch (error) {
+    console.error('Token verification error:', error);
     res.status(401).json({
       success: false,
-      error: 'Invalid or expired token'
+      error: 'Invalid token'
     });
   }
 });
