@@ -1,166 +1,312 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const router = express.Router();
-const Order = require('../models/Order');
-const auth = require('../middleware/auth');
+const mongoose = require('mongoose');
 
-// POST /api/orders/checkout - Create new order
+// Only import the model ONCE
+const Order = require('../models/Order');
+
+// Helper function to check if string is valid MongoDB ObjectId
+function isValidObjectId(id) {
+  if (!id) return false;
+  // Check if it's a 24-character hex string
+  return mongoose.Types.ObjectId.isValid(id) && /^[0-9a-fA-F]{24}$/.test(id);
+}
+
+// CHECKOUT ENDPOINT - Fixed version
 router.post('/checkout', async (req, res) => {
+  console.log('\n' + '='.repeat(60));
+  console.log('🛒 CHECKOUT REQUEST RECEIVED AT:', new Date().toISOString());
+  console.log('='.repeat(60));
+  
   try {
-    console.log('🛒 CHECKOUT REQUEST RECEIVED ============');
-    console.log('Headers:', req.headers);
-    console.log('Body:', JSON.stringify(req.body, null, 2));
+    // Log incoming request
+    console.log('📦 Full request body:', JSON.stringify(req.body, null, 2));
     
-    const { items, paymentMethod, deliveryAddress, notes, customerInfo } = req.body;
+    const { items, paymentMethod, deliveryAddress, customerInfo, notes } = req.body;
     
-    // Validate required fields
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      console.error('❌ No items in order');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Cart is empty' 
+    // === VALIDATION ===
+    if (!items || !Array.isArray(items)) {
+      console.log('❌ No items array in request');
+      return res.status(400).json({
+        success: false,
+        message: 'No items in cart'
       });
     }
     
-    // Log each item for debugging
-    console.log('📦 Items received:', items.length);
-    items.forEach((item, index) => {
-      console.log(`  Item ${index + 1}:`, {
-        productId: item.productId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity
+    console.log(`📦 Items count: ${items.length}`);
+    
+    if (items.length === 0) {
+      console.log('❌ Empty items array');
+      return res.status(400).json({
+        success: false,
+        message: 'Cart is empty'
       });
+    }
+    
+    if (!customerInfo) {
+      console.log('❌ No customer info');
+      return res.status(400).json({
+        success: false,
+        message: 'Customer information is required'
+      });
+    }
+    
+    if (!customerInfo.name || !customerInfo.phone) {
+      console.log('❌ Missing name or phone');
+      return res.status(400).json({
+        success: false,
+        message: 'Name and phone number are required',
+        customerInfo: customerInfo
+      });
+    }
+    
+    console.log('👤 Customer:', customerInfo.name);
+    console.log('📞 Phone:', customerInfo.phone);
+    
+    // === CALCULATE TOTALS ===
+    let subtotal = 0;
+    items.forEach((item, index) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 1;
+      subtotal += price * quantity;
+      console.log(`   Item ${index + 1}: ${item.name} - $${price} x ${quantity} = $${price * quantity}`);
     });
     
-    // Calculate total
-    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const shipping = 5;
+    const shipping = 5.00;
     const tax = subtotal * 0.08;
     const totalAmount = subtotal + shipping + tax;
     
-    console.log('💰 Calculations:', {
-      subtotal,
-      shipping,
-      tax,
-      totalAmount
+    console.log('💰 Order Summary:');
+    console.log(`   Subtotal: $${subtotal.toFixed(2)}`);
+    console.log(`   Shipping: $${shipping.toFixed(2)}`);
+    console.log(`   Tax (8%): $${tax.toFixed(2)}`);
+    console.log(`   Total: $${totalAmount.toFixed(2)}`);
+    
+    // === GET USER FROM TOKEN ===
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        // Decode token (for demo - in production, verify with JWT)
+        const base64Payload = token.split('.')[1];
+        const payload = Buffer.from(base64Payload, 'base64').toString();
+        const userData = JSON.parse(payload);
+        userId = userData.userId;
+        console.log(`👤 User ID from token: ${userId}`);
+      } catch (tokenError) {
+        console.log('⚠️ Token invalid, proceeding as guest order:', tokenError.message);
+      }
+    }
+    
+    // === PREPARE ORDER ITEMS (FIXED) ===
+    const orderItems = items.map(item => {
+      // Handle product field - only set if it's a valid ObjectId
+      let productField = null;
+      const productId = item.productId || '';
+      
+      if (productId && isValidObjectId(productId)) {
+        productField = new mongoose.Types.ObjectId(productId);
+      }
+      
+      return {
+        product: productField, // Will be null for string IDs like "9", "12"
+        productId: productId,  // Store the original string ID
+        name: item.name || 'Product',
+        price: parseFloat(item.price) || 0,
+        quantity: parseInt(item.quantity) || 1,
+        shade: item.shade || 'default'
+      };
     });
     
-    // Create order - FIX: Handle productId conversion
+    // === CREATE ORDER OBJECT ===
     const orderData = {
-      items: items.map(item => {
-        // Try to convert productId to ObjectId if it's a valid format
-        let productId = null;
-        try {
-          if (mongoose.Types.ObjectId.isValid(item.productId)) {
-            productId = new mongoose.Types.ObjectId(item.productId);
-          } else {
-            console.log(`⚠️ Invalid ObjectId for product: ${item.productId}, using null`);
-          }
-        } catch (error) {
-          console.log(`⚠️ Could not convert productId: ${item.productId}`, error.message);
-        }
-        
-        return {
-          product: productId, // This can be null for guest orders
-          productId: item.productId, // Keep original ID as string
-          quantity: item.quantity,
-          price: item.price,
-          name: item.name,
-          shade: item.shade || 'default'
-        };
-      }),
-      totalAmount,
+      user: userId,
+      customerInfo: {
+        name: (customerInfo.name || '').trim(),
+        email: (customerInfo.email || '').trim().toLowerCase(),
+        phone: (customerInfo.phone || '').trim()
+      },
+      items: orderItems,
+      totalAmount: parseFloat(totalAmount.toFixed(2)),
       paymentMethod: paymentMethod || 'cash',
-      paymentStatus: 'pending',
-      status: 'pending',
-      deliveryAddress: deliveryAddress || {},
-      customerInfo: customerInfo || {},
-      notes: notes || ''
+      deliveryAddress: {
+        street: (deliveryAddress?.street || '').trim(),
+        city: (deliveryAddress?.city || '').trim(),
+        state: (deliveryAddress?.state || '').trim(),
+        zipCode: (deliveryAddress?.zipCode || '').trim(),
+        country: (deliveryAddress?.country || 'Ethiopia').trim()
+      },
+      notes: notes || '',
+      status: 'pending'
     };
-    
-    // Add user reference if token exists in headers
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (token) {
-      try {
-        const jwt = require('jsonwebtoken');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        orderData.user = decoded.userId;
-        console.log('👤 Order linked to user:', decoded.userId);
-      } catch (authError) {
-        console.log('⚠️ Token verification failed, creating guest order');
-      }
-    } else {
-      console.log('👤 Guest checkout (no token)');
-    }
     
     console.log('📝 Final order data:', JSON.stringify(orderData, null, 2));
     
-    // Save order
+    // === SAVE TO DATABASE ===
     console.log('💾 Saving order to database...');
-    const order = new Order(orderData);
-    await order.save();
     
-    console.log('✅ Order saved successfully!');
-    console.log('📋 Order ID:', order._id);
-    console.log('📋 Order number (if exists):', order.orderNumber);
-    
-    res.json({
-      success: true,
-      message: 'Order placed successfully!',
-      order: {
-        _id: order._id,
-        orderNumber: order.orderNumber,
-        totalAmount: order.totalAmount,
-        status: order.status,
-        createdAt: order.createdAt
-      },
-      orderId: order._id
-    });
-    
-    console.log('✅ CHECKOUT COMPLETE ============\n');
-    
-  } catch (error) {
-    console.error('❌ ORDER CREATION ERROR ============');
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('Full error:', error);
-    
-    // Check for specific MongoDB errors
-    if (error.name === 'ValidationError') {
-      console.error('Mongoose Validation Error:', error.errors);
+    try {
+      const order = new Order(orderData);
+      const savedOrder = await order.save();
+      
+      console.log('✅ ORDER SAVED SUCCESSFULLY!');
+      console.log(`   Order ID: ${savedOrder._id}`);
+      console.log(`   Order Number: ${savedOrder.orderNumber}`);
+      console.log(`   Customer: ${savedOrder.customerInfo.name}`);
+      console.log(`   Total: $${savedOrder.totalAmount}`);
+      
+      console.log('='.repeat(60));
+      console.log('✅ CHECKOUT COMPLETE\n');
+      
+      // Send success response
+      res.status(201).json({
+        success: true,
+        message: 'Order placed successfully!',
+        orderId: savedOrder._id,
+        orderNumber: savedOrder.orderNumber,
+        order: savedOrder
+      });
+      
+    } catch (saveError) {
+      console.error('❌ DATABASE SAVE ERROR:', saveError.message);
+      console.error('Validation errors:', saveError.errors);
+      throw saveError; // Let the outer catch handle it
     }
     
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to place order',
+  } catch (error) {
+    console.error('❌ ORDER CREATION ERROR:');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.log('='.repeat(60) + '\n');
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to place order. Please try again.',
       error: error.message,
-      errorType: error.name
+      errorType: error.constructor.name
     });
   }
 });
 
-// GET /api/orders/:id - Get order by ID
-router.get('/:id', auth, async (req, res) => {
+// DEBUG: Get all orders
+router.get('/debug/all', async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id)
-      .populate('user', 'name email phone')
-      .populate('items.product', 'name price');
+    console.log('📊 Fetching all orders from database...');
     
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
+    const orders = await Order.find()
+      .sort({ createdAt: -1 })
+      .limit(50);
     
-    // Check if user owns the order or is admin
-    if (order.user && order.user._id.toString() !== req.user.userId && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+    console.log(`✅ Found ${orders.length} orders`);
     
-    res.json({ success: true, order });
+    const simplifiedOrders = orders.map(order => ({
+      id: order._id,
+      orderNumber: order.orderNumber,
+      customer: order.customerInfo?.name || 'No name',
+      email: order.customerInfo?.email || 'No email',
+      phone: order.customerInfo?.phone || 'No phone',
+      total: order.totalAmount,
+      items: order.items.length,
+      status: order.status,
+      date: order.createdAt,
+      user: order.user || 'guest'
+    }));
+    
+    res.json({
+      success: true,
+      count: orders.length,
+      orders: simplifiedOrders
+    });
+    
   } catch (error) {
-    console.error('Get order error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch order' });
+    console.error('❌ Debug endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch orders',
+      error: error.message
+    });
   }
+});
+
+// Get orders for authenticated user
+router.get('/my-orders', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    let userId = null;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const base64Payload = token.split('.')[1];
+        const payload = Buffer.from(base64Payload, 'base64').toString();
+        const userData = JSON.parse(payload);
+        userId = userData.userId;
+      } catch (error) {
+        // Token invalid, return empty array
+        return res.json({
+          success: true,
+          orders: []
+        });
+      }
+    }
+    
+    if (!userId) {
+      return res.json({
+        success: true,
+        orders: []
+      });
+    }
+    
+    const orders = await Order.find({ user: userId })
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      orders
+    });
+    
+  } catch (error) {
+    console.error('Get my orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch orders'
+    });
+  }
+});
+
+// Clear all orders (for testing)
+router.delete('/debug/clear', async (req, res) => {
+  try {
+    const result = await Order.deleteMany({});
+    console.log(`🗑️ Cleared ${result.deletedCount} orders`);
+    
+    res.json({
+      success: true,
+      message: `Cleared ${result.deletedCount} orders`,
+      deletedCount: result.deletedCount
+    });
+    
+  } catch (error) {
+    console.error('Clear orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear orders',
+      error: error.message
+    });
+  }
+});
+
+// Test endpoint
+router.post('/test', (req, res) => {
+  console.log('🧪 Test endpoint called');
+  
+  res.json({
+    success: true,
+    message: 'Order endpoint is working!',
+    timestamp: new Date().toISOString()
+  });
 });
 
 module.exports = router;

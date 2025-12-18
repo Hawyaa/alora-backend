@@ -1,194 +1,176 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
-const isAdmin = require('../middleware/isAdmin');
-const Cart = require('../models/Cart');
 const Order = require('../models/Order');
+const User = require('../models/User');
 
-// Test route
-router.get('/test', auth, isAdmin, (req, res) => {
-  res.json({
-    success: true,
-    message: '✅ Admin access confirmed!',
-    user: req.user
-  });
-});
-
-// Get ALL customer carts
-router.get('/carts', auth, isAdmin, async (req, res) => {
+// Get all orders for admin dashboard
+router.get('/orders', async (req, res) => {
   try {
-    console.log('📦 Admin: Fetching all customer carts');
+    console.log('📊 Admin fetching all orders...');
     
-    const carts = await Cart.find()
-      .populate({
-        path: 'user',
-        select: 'name email phone',
-        options: { lean: true }
-      })
-      .populate({
-        path: 'items.product',
-        select: 'name price images',
-        options: { lean: true }
-      })
-      .sort({ updatedAt: -1 })
-      .lean();
-    
-    console.log(`✅ Found ${carts.length} carts`);
-    
-    res.json({
-      success: true,
-      count: carts.length,
-      carts: carts
-    });
-    
-  } catch (error) {
-    console.error('❌ Admin carts error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// Get ALL customer orders
-router.get('/orders', auth, isAdmin, async (req, res) => {
-  try {
-    console.log('📦 Admin: Fetching all customer orders');
-    
+    // Get all orders
     const orders = await Order.find()
-      .populate({
-        path: 'user',
-        select: 'name email phone',
-        options: { lean: true }
-      })
-      .populate({
-        path: 'items.product',
-        select: 'name price images',
-        options: { lean: true }
-      })
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${orders.length} orders for admin`);
     
-    console.log(`✅ Found ${orders.length} orders`);
-    
+    // Format orders for admin view
+    const formattedOrders = orders.map(order => {
+      // Calculate total for each item
+      const itemsWithTotals = order.items.map(item => {
+        return {
+          name: item.name || 'Unknown Product',
+          quantity: item.quantity || 1,
+          price: item.price || 0,
+          shade: item.shade || 'default',
+          total: (item.price || 0) * (item.quantity || 1)
+        };
+      });
+
+      const customerInfo = order.customerInfo || {};
+      
+      // Convert _id to string for substring operation
+      const orderId = order._id ? order._id.toString() : '';
+      const orderNumber = order.orderNumber || `ORD-${orderId.substring(0, 8).toUpperCase()}`;
+      
+      return {
+        _id: orderId,
+        orderNumber: orderNumber,
+        // Return as customerInfo (matching Order model)
+        customerInfo: {
+          name: customerInfo.name || 'Guest Customer',
+          email: customerInfo.email || 'No email provided',
+          phone: customerInfo.phone || 'No phone provided'
+        },
+        items: itemsWithTotals,
+        totalAmount: order.totalAmount || 0,
+        status: order.status || 'pending',
+        paymentMethod: order.paymentMethod || 'cash',
+        deliveryAddress: order.deliveryAddress || {},
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      };
+    });
+
     res.json({
       success: true,
       count: orders.length,
-      orders: orders
+      orders: formattedOrders
     });
-    
+
   } catch (error) {
     console.error('❌ Admin orders error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch orders',
+      error: error.message
     });
   }
 });
 
-// Create a test order (for debugging)
-router.post('/test-order', auth, isAdmin, async (req, res) => {
+// Get admin dashboard stats
+router.get('/stats', async (req, res) => {
   try {
-    // Check if there are any products in the database
-    const Product = require('../models/Product');
-    const products = await Product.find().limit(1);
+    console.log('📈 Admin fetching dashboard stats...');
     
-    if (products.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No products found in database. Please add products first.'
-      });
-    }
+    // Get total orders count
+    const totalOrders = await Order.countDocuments();
     
-    // Create a test order
-    const order = new Order({
-      user: req.user.id,
-      items: [{
-        product: products[0]._id,
-        quantity: 2,
-        price: 29.99,
-        shade: { 
-          name: 'Pink Blush', 
-          code: '#FF69B4' 
+    // Get total revenue
+    const revenueResult = await Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$totalAmount' }
         }
-      }],
-      totalAmount: 59.98,
-      status: 'pending',
-      paymentMethod: 'cash',
-      paymentStatus: 'pending'
-    });
-    
-    await order.save();
-    
-    // Populate the order with user and product details
-    const populatedOrder = await Order.findById(order._id)
-      .populate('user', 'name email phone')
-      .populate('items.product', 'name price images');
-    
-    res.json({
-      success: true,
-      message: 'Test order created successfully',
-      order: populatedOrder
-    });
-    
-  } catch (error) {
-    console.error('❌ Test order error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// Get dashboard statistics
-router.get('/stats', auth, isAdmin, async (req, res) => {
-  try {
-    console.log('📊 Admin: Fetching dashboard statistics');
-    
-    const [
-      totalCarts,
-      totalOrders,
-      paidOrders,
-      pendingOrders
-    ] = await Promise.all([
-      Cart.countDocuments(),
-      Order.countDocuments(),
-      Order.countDocuments({ status: 'paid' }),
-      Order.countDocuments({ status: 'pending' })
+      }
     ]);
     
-    // Calculate total revenue from paid orders
-    const paidOrdersData = await Order.find({ status: 'paid' }, 'totalAmount');
-    const totalRevenue = paidOrdersData.reduce((sum, order) => sum + order.totalAmount, 0);
+    const totalRevenue = revenueResult[0]?.totalRevenue || 0;
     
-    // Calculate total cart value
-    const carts = await Cart.find().populate('items.product', 'price');
-    const totalCartValue = carts.reduce((sum, cart) => {
-      return sum + cart.items.reduce((cartSum, item) => {
-        return cartSum + (item.price * item.quantity);
-      }, 0);
-    }, 0);
+    // Get orders by status
+    const pendingOrders = await Order.countDocuments({ status: 'pending' });
+    const completedOrders = await Order.countDocuments({ status: 'delivered' });
+    const cancelledOrders = await Order.countDocuments({ status: 'cancelled' });
+    
+    // Get recent orders (last 7 days)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const recentOrders = await Order.countDocuments({
+      createdAt: { $gte: oneWeekAgo }
+    });
+    
+    // Get total customers
+    const totalCustomers = await User.countDocuments({ role: 'customer' });
     
     res.json({
       success: true,
       stats: {
-        totalCarts,
         totalOrders,
-        paidOrders,
-        pendingOrders,
         totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-        totalCartValue: parseFloat(totalCartValue.toFixed(2))
+        pendingOrders,
+        completedOrders,
+        cancelledOrders,
+        recentOrders,
+        totalCustomers,
+        chartData: {
+          labels: ['Pending', 'Completed', 'Cancelled'],
+          data: [pendingOrders, completedOrders, cancelledOrders]
+        }
       }
+    });
+
+  } catch (error) {
+    console.error('❌ Admin stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard stats',
+      error: error.message
+    });
+  }
+});
+
+// Update order status
+router.put('/orders/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    if (!['pending', 'processing', 'shipped', 'delivered', 'cancelled'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status'
+      });
+    }
+    
+    const order = await Order.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+    
+    console.log(`✅ Updated order ${id} status to ${status}`);
+    
+    res.json({
+      success: true,
+      message: 'Order status updated successfully',
+      order
     });
     
   } catch (error) {
-    console.error('❌ Admin stats error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    console.error('❌ Update order status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update order status',
+      error: error.message
     });
   }
 });
