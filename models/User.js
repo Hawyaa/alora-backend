@@ -4,61 +4,40 @@ const bcrypt = require('bcryptjs');
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Name is required'],
+    required: true,
     trim: true
   },
   email: {
     type: String,
-    required: [true, 'Email is required'],
+    required: true,
     unique: true,
     lowercase: true,
     trim: true
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
-    minlength: 6
+    required: true
   },
   role: {
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
   },
-  phone: {
-    type: String,
-    default: ''
-  },
+  phone: String,
   address: {
     street: String,
     city: String,
     state: String,
     zipCode: String
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
+}, {
+  timestamps: true // This automatically adds createdAt and updatedAt
 });
 
-// FIXED: Simplified pre-save hook without 'next' parameter issues
-userSchema.pre('save', function() {
-  // Always update timestamp
-  this.updatedAt = Date.now();
-  
-  // Only hash password if it's modified
-  if (this.isModified('password')) {
-    const salt = bcrypt.genSaltSync(10);
-    this.password = bcrypt.hashSync(this.password, salt);
-  }
-  
-  // No need to call next() - Mongoose handles it automatically
-});
+// SIMPLIFIED: No pre-save hook - we'll hash manually in the auth route
+// This avoids all "next is not a function" errors
 
-// Compare password method (synchronous)
+// Compare password method
 userSchema.methods.comparePassword = function(candidatePassword) {
   return bcrypt.compareSync(candidatePassword, this.password);
 };
