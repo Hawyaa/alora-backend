@@ -15,20 +15,22 @@ const productSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  category: {
+    type: String,
+    required: true,
+    enum: ['lipgloss', 'lipstick', 'lipbalm', 'accessories']
+  },
   images: [{
     type: String
   }],
-  category: {
-    type: String,
-    required: true
-  },
   inStock: {
     type: Boolean,
     default: true
   },
   stockQuantity: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   shades: [{
     name: String,
