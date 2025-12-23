@@ -5,7 +5,6 @@ require('dotenv').config();
 
 const app = express();
 
-
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -26,6 +25,7 @@ const cartRoutes = require('./routes/cart');
 const productRoutes = require('./routes/products');
 const paymentRoutes = require('./routes/payment');
 const orderRoutes = require('./routes/order');
+const homepageProductsRoutes = require('./routes/homepageProducts'); // ADD THIS LINE
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -34,6 +34,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/homepage-products', homepageProductsRoutes); // ADD THIS LINE
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -164,6 +165,7 @@ const startServer = async () => {
     console.log(`💳 Payment: http://localhost:${PORT}/api/payment`);
     console.log(`📦 Orders: http://localhost:${PORT}/api/orders`);
     console.log(`👑 Admin: http://localhost:${PORT}/api/admin`);
+    console.log(`🏠 Homepage: http://localhost:${PORT}/api/homepage-products`); // ADD THIS LINE
     console.log(`🐛 Debug: http://localhost:${PORT}/api/debug/orders`);
     console.log('='.repeat(50));
     
