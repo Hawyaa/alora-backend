@@ -1,13 +1,11 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const authRoutes = require('./routes/auth');
 require('dotenv').config();
 
 const app = express();
 
-// Middleware
-app.use('/api/auth', authRoutes);
+// ✅ 1. CORS FIRST
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -18,9 +16,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
+
+// ✅ 2. JSON PARSER SECOND
 app.use(express.json());
 
-// Request logging
+// ✅ 3. Request logging THIRD
 app.use((req, res, next) => {
   console.log(`📍 ${new Date().toISOString()} ${req.method} ${req.path}`);
   if (req.body && Object.keys(req.body).length > 0 && req.path !== '/api/auth/login') {
@@ -29,25 +29,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// Import routes
-const adminRoutes = require('./routes/admin');
+// ✅ 4. IMPORT routes ONCE
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 const cartRoutes = require('./routes/cart');
 const productRoutes = require('./routes/products');
 const paymentRoutes = require('./routes/payment');
 const orderRoutes = require('./routes/order');
-const homepageProductsRoutes = require('./routes/homepageProducts'); // ADD THIS LINE
+const homepageProductsRoutes = require('./routes/homepageProducts');
 
-// Use routes
+// ✅ 5. USE routes AFTER middleware
 app.use('/api/auth', authRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/homepage-products', homepageProductsRoutes); // ADD THIS LINE
+app.use('/api/homepage-products', homepageProductsRoutes);
 
-// Health check endpoint
+// ✅ 6. Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
     success: true, 
@@ -57,19 +57,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Debug endpoint to see all orders
+// ✅ 7. Debug endpoint
 app.get('/api/debug/orders', async (req, res) => {
   try {
-    // Check if mongoose is connected
     if (mongoose.connection.readyState !== 1) {
       return res.status(500).json({
         success: false,
         message: 'Database not connected',
-        dbState: mongoose.connection.readyState // 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
+        dbState: mongoose.connection.readyState
       });
     }
     
-    // Try to access Order model
     const Order = require('./models/Order');
     const orders = await Order.find().sort({ createdAt: -1 }).limit(10);
     
@@ -97,7 +95,7 @@ app.get('/api/debug/orders', async (req, res) => {
   }
 });
 
-// Handle undefined API routes
+// ✅ 8. Handle undefined API routes (MUST be LAST)
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({
@@ -108,7 +106,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Global error handler
+// ✅ 9. Global error handler (MUST be VERY LAST)
 app.use((error, req, res, next) => {
   console.error('🚨 Server error:', error.message);
   console.error('Stack trace:', error.stack);
@@ -122,10 +120,9 @@ app.use((error, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// MongoDB connection - SIMPLIFIED VERSION
+// MongoDB connection
 const connectDB = async () => {
   try {
-    // Remove deprecated options for newer MongoDB driver
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/alora';
     console.log(`🔗 Connecting to MongoDB at: ${mongoURI.replace(/\/\/[^@]*@/, '//***:***@')}`);
     
@@ -137,31 +134,9 @@ const connectDB = async () => {
     
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
-    
-    // Try alternative connection method
-    console.log('🔄 Trying alternative connection method...');
-    try {
-      await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/alora', {
-        useNewUrlParser: false, // Remove this option
-        useUnifiedTopology: false // Remove this option
-      });
-      console.log('✅ MongoDB connected with alternative method!');
-    } catch (altError) {
-      console.error('❌ Alternative connection also failed:', altError.message);
-      console.log('\n💡 TROUBLESHOOTING TIPS:');
-      console.log('1. Make sure MongoDB is running: mongod --version');
-      console.log('2. Start MongoDB service: sudo systemctl start mongod (Linux)');
-      console.log('3. On Windows, check if MongoDB service is running in Services');
-      console.log('4. Try: mongod --dbpath="C:/data/db" (Windows)');
-      console.log('5. Install MongoDB Compass to check if database is accessible');
-      
-      // Don't exit, allow server to run (for development)
-      console.log('\n⚠️  Server will run without database connection (for testing)');
-    }
   }
 };
 
-// Start server even if DB fails (for development)
 const startServer = async () => {
   await connectDB();
   
@@ -176,14 +151,12 @@ const startServer = async () => {
     console.log(`💳 Payment: http://localhost:${PORT}/api/payment`);
     console.log(`📦 Orders: http://localhost:${PORT}/api/orders`);
     console.log(`👑 Admin: http://localhost:${PORT}/api/admin`);
-    console.log(`🏠 Homepage: http://localhost:${PORT}/api/homepage-products`); // ADD THIS LINE
+    console.log(`🏠 Homepage: http://localhost:${PORT}/api/homepage-products`);
     console.log(`🐛 Debug: http://localhost:${PORT}/api/debug/orders`);
     console.log('='.repeat(50));
     
     if (mongoose.connection.readyState !== 1) {
       console.log('\n⚠️  WARNING: Database is not connected!');
-      console.log('   Some features may not work properly.');
-      console.log('   Orders will be saved to localStorage only.');
     } else {
       console.log('\n✅ Database is connected and ready!');
     }
