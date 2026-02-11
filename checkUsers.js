@@ -1,22 +1,27 @@
-// Create file: checkUsers.js in backend folder
 const mongoose = require('mongoose');
 require('dotenv').config();
 
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/alora');
+
+const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
+  name: String,
+  email: String,
+  role: String
+}));
+
 async function checkUsers() {
-  await mongoose.connect(process.env.MONGODB_URI);
-  const db = mongoose.connection.db;
-  const users = await db.collection('users').find({}).toArray();
+  console.log('🔍 Checking users in database...');
+  const users = await User.find({});
+  console.log(`📊 Total users: ${users.length}`);
   
-  console.log('📋 ALL USERS IN DATABASE:');
-  users.forEach(user => {
-    console.log(`- Email: ${user.email}`);
+  users.forEach((user, index) => {
+    console.log(`\nUser ${index + 1}:`);
     console.log(`  Name: ${user.name}`);
-    console.log(`  Role: ${user.role || 'user'}`);
-    console.log(`  ID: ${user._id}`);
-    console.log('---');
+    console.log(`  Email: ${user.email}`);
+    console.log(`  Role: ${user.role}`);
   });
   
-  process.exit();
+  mongoose.disconnect();
 }
 
 checkUsers();
