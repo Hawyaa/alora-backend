@@ -1,12 +1,23 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const authRoutes = require('./routes/auth');
 require('dotenv').config();
 
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use('/api/auth', authRoutes);
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://alora-tau.vercel.app',
+    'https://alora-rloyrtz59-hawi-s-projects.vercel.app'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+}));
 app.use(express.json());
 
 // Request logging
