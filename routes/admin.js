@@ -1,3 +1,4 @@
+// UPDATED: Added orders endpoint - FEB 11 2026 - CRITICAL FIX
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
